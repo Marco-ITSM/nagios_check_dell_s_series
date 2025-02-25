@@ -10,17 +10,20 @@
    you can use generic SNMP check as the excellent check_nwc_health from Consol Labs:
    https://labs.consol.de/nagios/check_nwc_health/
    2018-09-04 - Eric Belhomme <rico-github@ricozome.net>
+   2022-03-03 - Jon Witts - Updated for Python 3
+   2025-02-20 - Marco Hahnen - Replaced netsnmp with easysnmp for Debian 12 compatibility
 """
 from __future__ import print_function
 
 import sys
 import optparse
 import re
-import netsnmp
+import easysnmp
 
-__author__ = 'Eric Belhomme'
-__contact__ = 'rico-github@ricozome.net'
-__version__ = '0.1.1'
+__author__ = 'Marco Hahnen'
+__contact__ = 'github@marco-hahnen.de'
+__credits__ = ['Eric Belhomme', 'Jon Witts']
+__version__ = '0.2'
 __license__ = 'MIT'
 
 nagiosStatus = {
@@ -79,18 +82,17 @@ def getSnmpOperStatus(snmpOID, textval, warn, crit):
 	message = []
 	retCode = 0
 	countfail =0
-	var = netsnmp.VarList(netsnmp.Varbind(snmpOID))
-	vals = snmpSession.walk(var)
+	vals = snmpSession.walk(snmpOID)
 	if vals:
 		index = 1
 		for item in vals:
-			if int(item) == 4:
+			if int(item.value) == 4:
 				retCode = 3
-#				message.append(textval + ' number '+ index + 'repported as ' + Os10CmnOperStatus.get(item))
+#				message.append(textval + ' number ' + str(index) + ' repported as ' + Os10CmnOperStatus.get(item.value))
 			else:
-				if int(item) != 1:
+				if int(item.value) != 1:
 					countfail += 1
-#					message.append(textval + ' number '+ index + 'repported as ' + Os10CmnOperStatus.get(item))
+#					message.append(textval + ' number '+ index + 'repported as ' + Os10CmnOperStatus.get(item.value))
 			message.append(str(textval) + ' number '+ str(index) + ' reported as ' + str(Os10CmnOperStatus.get(item)))
 			index += 1
 
@@ -118,39 +120,41 @@ def getSystemInfo():
 	message = []
 	retCode = 0
 	cardStatus = 6
-	vars = netsnmp.VarList(
-		netsnmp.Varbind('.1.3.6.1.2.1.1.5', 0), # sysName
-		netsnmp.Varbind('.1.3.6.1.2.1.1.2', 0), # sysObjectId
-		netsnmp.Varbind('.1.3.6.1.2.1.1.1', 0)) # sysDescr
-	vals = snmpSession.get(vars)
+	sysoids = ['sysName.0','sysObjectID.0','sysDescr.0']
+	vals = snmpSession.get(sysoids)
+	sysName = vals[0].value
+	sysObjectId = vals[1].value
+	sysDescr = vals[2].value
 	if vals:
-		message.append(str(vals[0]) + ' (' + str(vals[1]) + ' - ' + str(vals[2]) + ')')
+		message.append(sysName + ' (' + sysObjectId + ' - ' + sysDescr + ')')
 	else:
 		retCode = 3
 		message.insert(0, 'Unable to get SNMP metrics from server !')
 
-	vars = netsnmp.VarList(
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.2.1'), # chassis type
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.6.1'), # chassis hw rev.
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.4.1'), # chassis p/n
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.7.1')) #chassis service tag
-	vals = snmpSession.get(vars)
+	chassisoids = [
+		'.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.2.1', # chassis type
+		'.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.6.1', # chassis hw rev.
+		'.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.4.1', # chassis p/n
+		'.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.7.1' #chassis service tag
+		]
+	vals = snmpSession.get(chassisoids)
 	if vals:
-		message.append('chassis: ' + str(Os10ChassisDefType.get(vals[0])) + ' (rev. ' + str(vals[1]) + ') - p/n:' + str(vals[2]) + ' - ServiceTag:' + str(vals[3]))
+		message.append('chassis: ' + str(Os10ChassisDefType.get(vals[0].value)) + ' (rev. ' + str(vals[1].value) + ') - p/n:' + str(vals[2].value) + ' - ServiceTag:' + str(vals[3].value))
 	else:
 		retCode = 3
 		message.insert(0, 'Unable to get SNMP metrics from server !')
 
-	vars = netsnmp.VarList(
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.3.1.1'), # card descr
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.8.1.1'), # card h/w rev.
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.6.1.1'), # card P/N
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.4.1.1'), # card status
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.9.1.1')) # card Service Tag
-	vals = snmpSession.get(vars)
+	cardoids = [
+               '.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.3.1.1', # card descr
+               '.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.8.1.1', # card h/w rev.
+               '.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.6.1.1', # card P/N
+               '.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.4.1.1', # card status
+               '.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.9.1.1' # card Service Tag
+	]
+	vals = snmpSession.get(cardoids)
 	if vals:
-		cardStatus = int(vals[3])
-		message.append('card: ' + str(vals[0]) + ' (rev. ' + str(vals[1]) + ') - p/n:' + str(vals[2]) + ' - ServiceTag:' + str(vals[4]) + ' - status:' + str(Os10CardOperStatus.get(vals[3])))
+		cardStatus = int(vals[3].value)
+		message.append('card: ' + str(vals[0].value) + ' (rev. ' + str(vals[1].value) + ') - p/n:' + str(vals[2].value) + ' - ServiceTag:' + str(vals[4].value) + ' - status:' + str(Os10CardOperStatus.get(vals[3].value)))
 	else:
 		retCode = 3
 		message.insert(0, 'Unable to get SNMP metrics from server !')
@@ -169,30 +173,26 @@ def getSystemInfo():
 def getTemperatures(warn, crit):
 	retCode = 0
 	message = []
-	vars = netsnmp.VarList(
-	#	netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.11'), # chassis temp.
-	#	netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.5')  # card temp.
-		netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.11.1'), # chassis temp.
-        netsnmp.Varbind('.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.5.1.1')  # card temp.
-	)
-	#vals = snmpSession.walk(vars)
-	vals = snmpSession.get(vars)
+	tempoids = [
+        	'.1.3.6.1.4.1.674.11000.5000.100.4.1.1.3.1.11.1', # chassis temp.
+	        '.1.3.6.1.4.1.674.11000.5000.100.4.1.1.4.1.5.1.1'  # card temp.	
+	]
+	vals = snmpSession.get(tempoids)
 	if vals:
 		for temp in vals:
-			if int(temp) > int(crit) and retCode < 2:
+			if int(temp.value) > int(crit) and retCode < 2:
 				retCode = 2
-				message.append('temperature sensor at ' + str(temp) + ' °C exceed critical threshold (' + str(crit) + '°C)')
-			elif int(temp) > int(warn) and retCode < 1:
+				message.append('temperature sensor at ' + str(temp.value) + ' °C exceed critical threshold (' + str(crit) + '°C)')
+			elif int(temp.value) > int(warn) and retCode < 1:
 				retCode = 1
-				message.append('temperature sensor at ' + str(temp) + ' °C exceed warning threshold (' + str(warn) + '°C)')
+				message.append('temperature sensor at ' + str(temp.value) + ' °C exceed warning threshold (' + str(warn) + '°C)')
 			else:
-				message.append('temperature sensor at ' + str(temp) + ' °C')
+				message.append('temperature sensor at ' + str(temp.value) + ' °C')
 	else:
 		retCode = 3
 		message.insert(0, 'Unable to get SNMP metrics from server !')	
 	if retCode == 0:
-		avg = sum(map(int, vals)) / len(vals)
-		message.insert(0, 'all temperature sensors OK with an average of '+ str(avg) + '°C')
+		message.insert(0, 'all temperature sensors OK')
 
 	print(nagiosStatus.get(str(retCode)) + ':', end=' ')
 	for item in message:
@@ -267,7 +267,7 @@ def getArgs():
 if __name__ == '__main__':
 	retCode = 3
 	host, community, mode, warn, crit = getArgs()
-	snmpSession = netsnmp.Session( Version = 2, DestHost=host, Community=community )
+	snmpSession = easysnmp.Session( version = 2, hostname=host, community=community )
 
 	if mode == 'fans':
 		# os10FanTrayOperStatus MIB
