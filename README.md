@@ -15,3 +15,5 @@ https://labs.consol.de/nagios/check_nwc_health/
 2018-09-04 - Eric Belhomme <rico-github@ricozome.net> - Published under MIT license
 
 2022-03-03 - Jon Witts - Updated for Python 3
+
+2025-02-20 - Marco Hahnen - Replaced netsnmp with easysnmp for Debian 12 compatibility
